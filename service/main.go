@@ -2,6 +2,7 @@ package main
 
 import (
       elastic "gopkg.in/olivere/elastic.v3"
+      "strings"
       "fmt"
       "net/http"
       "encoding/json"
@@ -124,9 +125,8 @@ func handlerSearch(w http.ResponseWriter, r *http.Request) {
           p := item.(Post) // p = (Post) item
           fmt.Printf("Post by %s: %s at lat %v and lon %v\n", p.User, p.Message, p.Location.Lat, p.Location.Lon)
           if !containsFilteredWords(&p.Message) {
-                 ps = append(ps, p)
+              ps = append(ps, p)
           }
-          ps = append(ps, p)
       }
       js, err := json.Marshal(ps)
       if err != nil {
@@ -183,7 +183,8 @@ func saveToES(p *Post, id string) {
 func containsFilteredWords(s *string) bool {
         filteredWords := []string{
                 "fuck",
-                "100",
+                "shit",
+                "444",
         }
         for _, word := range filteredWords {
                 if strings.Contains(*s, word) {
