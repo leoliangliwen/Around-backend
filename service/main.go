@@ -13,6 +13,9 @@ import (
       "context"
       "cloud.google.com/go/storage"
       "io"
+      "github.com/auth0/go-jwt-middleware"
+      "github.com/dgrijalva/jwt-go"
+      "github.com/gorilla/mux"
 )
 const (
       INDEX = "around"
@@ -22,7 +25,7 @@ const (
       //PROJECT_ID = "around-xxx"
       //BT_INSTANCE = "around-post"
       // Needs to update this URL if you deploy it to cloud.
-      ES_URL = "http://35.196.217.86:9200"
+      ES_URL = "http://35.237.108.252:9200"
 
       // Needs to update this bucket based on your gcs bucket name.
       BUCKET_NAME = "post-image-206600"
@@ -40,6 +43,7 @@ type Post struct {
       Location Location `json:"location"`
       Url    string `json:"url"`
 }
+var mySigningKey = []byte("secret")
 
 func main() {
     // Create a client
@@ -75,9 +79,22 @@ func main() {
     }
 
     fmt.Println("started-service")
-        http.HandleFunc("/post", handlerPost)
-        http.HandleFunc("/search", handlerSearch)
-        log.Fatal(http.ListenAndServe(":8080", nil))
+
+    r := mux.NewRouter()
+    var jwtMiddleware = jwtmiddleware.New(jwtmiddleware.Options{
+           ValidationKeyGetter: func(token *jwt.Token) (interface{}, error) {
+                  return mySigningKey, nil
+           },
+           SigningMethod: jwt.SigningMethodHS256,
+    })
+
+    r.Handle("/post", jwtMiddleware.Handler(http.HandlerFunc(handlerPost))).Methods("POST")
+    r.Handle("/search", jwtMiddleware.Handler(http.HandlerFunc(handlerSearch))).Methods("GET")
+    r.Handle("/login", http.HandlerFunc(loginHandler)).Methods("POST")
+    r.Handle("/signup", http.HandlerFunc(signupHandler)).Methods("POST")
+
+    http.Handle("/", r)
+    log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
 
@@ -149,12 +166,11 @@ func handlerSearch(w http.ResponseWriter, r *http.Request) {
 
 
 func handlerPost(w http.ResponseWriter, r *http.Request) {
-      // Other codes
-     w.Header().Set("Content-Type", "application/json")
-     w.Header().Set("Access-Control-Allow-Origin", "*")
-     w.Header().Set("Access-Control-Allow-Headers", "Content-Type,Authorization")
-
-
+     // Other codes
+     user := r.Context().Value("user")
+     claims := user.(*jwt.Token).Claims
+     username := claims.(jwt.MapClaims)["username"]
+   
       // 32 << 20 is the maxMemory param for ParseMultipartForm, equals to 32MB (1MB = 1024 * 1024 bytes = 2^20 bytes)
       // After you call ParseMultipartForm, the file will be saved in the server memory with maxMemory size.
       // If the file size is larger than maxMemory, the rest of the data will be saved in a system temporary file.
@@ -164,9 +180,16 @@ func handlerPost(w http.ResponseWriter, r *http.Request) {
       fmt.Printf("Received one post request %s\n", r.FormValue("message"))
       lat, _ := strconv.ParseFloat(r.FormValue("lat"), 64)
       lon, _ := strconv.ParseFloat(r.FormValue("lon"), 64)
+      msg := r.FormValue("message")
+      if containsFilteredWords(&msg) {
+          http.Error(w, "Contain filtered words.", http.StatusInternalServerError)
+          fmt.Printf("Contain filtered words.\n")
+          return;
+      }
+
       p := &Post{
-             User:    "1111",
-             Message: r.FormValue("message"),
+             User:    username.(string),
+             Message: msg,
              Location: Location{
                     Lat: lat,
                     Lon: lon,
