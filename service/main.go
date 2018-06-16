@@ -11,11 +11,13 @@ import (
 	"strconv"
 	"strings"
 
+    "cloud.google.com/go/bigtable"
 	"cloud.google.com/go/storage"
 	"github.com/auth0/go-jwt-middleware"
 	"github.com/dgrijalva/jwt-go"
 	"github.com/gorilla/mux"
 	"github.com/pborman/uuid"
+
 	elastic "gopkg.in/olivere/elastic.v3"
 )
 
@@ -24,10 +26,10 @@ const (
 	TYPE     = "post"
 	DISTANCE = "200km"
 	// Needs to update
-	//PROJECT_ID = "around-xxx"
-	//BT_INSTANCE = "around-post"
+	PROJECT_ID = "around-206600"
+	BT_INSTANCE = "around-post"
 	// Needs to update this URL if you deploy it to cloud.
-	ES_URL = "http://35.237.108.252:9200"
+	ES_URL = "http://35.237.19.142:9200"
 
 	// Needs to update this bucket based on your gcs bucket name.
 	BUCKET_NAME = "post-image-206600"
@@ -220,7 +222,7 @@ func handlerPost(w http.ResponseWriter, r *http.Request) {
 	saveToES(p, id)
 
 	// Save to BigTable.
-	//saveToBigTable(p, id)
+	saveToBigTable(ctx, p, id)
 }
 
 func saveToGCS(ctx context.Context, r io.Reader, bucketName, name string) (*storage.ObjectHandle, *storage.ObjectAttrs, error) {
@@ -289,4 +291,28 @@ func containsFilteredWords(s *string) bool {
 		}
 	}
 	return false
+}
+
+func saveToBigTable(ctx context.Context, p *Post, id string) {
+
+    bt_client, err := bigtable.NewClient(ctx, PROJECT_ID, BT_INSTANCE)
+    if err != nil {
+        panic(err)
+    }
+
+    tbl := bt_client.Open("post")
+    mut := bigtable.NewMutation()
+    t := bigtable.Now()
+
+    mut.Set("post", "user", t, []byte(p.User))
+    mut.Set("post", "message", t, []byte(p.Message))
+    mut.Set("location", "lat", t, []byte(strconv.FormatFloat(p.Location.Lat, 'f', -1, 64)))
+    mut.Set("location", "lon", t, []byte(strconv.FormatFloat(p.Location.Lon, 'f', -1, 64)))
+
+    err = tbl.Apply(ctx, id, mut)
+    if err != nil {
+           panic(err)
+           return
+    }
+    fmt.Printf("Post is saved to BigTable: %s\n", p.Message)
 }
